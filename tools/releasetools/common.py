@@ -3589,15 +3589,16 @@ def MakeRecoveryPatch(input_dir, output_sink, recovery_img, boot_img,
 
   full_recovery_image = info_dict.get("full_recovery_image") == "true"
   board_uses_vendorimage = info_dict.get("board_uses_vendorimage") == "true"
+  board_builds_vendorimage =  info_dict.get("board_builds_vendorimage") == "true"
 
-  if board_uses_vendorimage:
-    # In this case, the output sink is rooted at VENDOR
-    recovery_img_path = "etc/recovery.img"
+  recovery_img_path = "etc/recovery.img"
+  if board_builds_vendorimage:
     recovery_resource_dat_path = "VENDOR/etc/recovery-resource.dat"
-  else:
-    # In this case the output sink is rooted at SYSTEM
-    recovery_img_path = "vendor/etc/recovery.img"
+  elif not board_uses_vendorimage:
     recovery_resource_dat_path = "SYSTEM/vendor/etc/recovery-resource.dat"
+  else:
+    logger.warning('Recovery patch generation is disable when prebuilt vendor image is used.')
+    return None
 
   if full_recovery_image:
     output_sink(recovery_img_path, recovery_img.data)
@@ -3723,6 +3724,9 @@ class DynamicPartitionsDifference(object):
     if progress_dict is None:
       progress_dict = {}
 
+    self._have_super_empty = \
+      info_dict.get("build_super_empty_partition") == "true"
+
     self._build_without_vendor = build_without_vendor
     self._remove_all_before_apply = False
     if source_info_dict is None:
@@ -3820,8 +3824,13 @@ class DynamicPartitionsDifference(object):
     ZipWrite(output_zip, op_list_path, "dynamic_partitions_op_list")
 
     script.Comment('Update dynamic partition metadata')
-    script.AppendExtra('assert(update_dynamic_partitions('
-                       'package_extract_file("dynamic_partitions_op_list")));')
+    if self._have_super_empty:
+      script.AppendExtra('assert(update_dynamic_partitions('
+                        'package_extract_file("dynamic_partitions_op_list"), '
+                        'package_extract_file("unsparse_super_empty.img")));')
+    else:
+      script.AppendExtra('assert(update_dynamic_partitions('
+                        'package_extract_file("dynamic_partitions_op_list")));')
 
     if write_verify_script:
       for p, u in self._partition_updates.items():
